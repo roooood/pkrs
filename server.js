@@ -18,8 +18,7 @@ class State {
 class metaData {
     constructor(options) {
         this.title = options.title;
-        this.owner = options.owner;
-        this.ownerId = options.id;
+        this.id = options.id;
         this.min = Number(options.min);
         this.max = Number(options.max);
         this.player = 7;
@@ -79,6 +78,7 @@ class Server extends colyseus.Room {
     onJoin(client, options, auth) {
         if (this.first) {
             this.meta = new metaData({
+                id: options.id || null,
                 title: options.title || 'Poker',
                 min: options.min || this.setting.minbet,
                 max: options.max || this.setting.maxbet,

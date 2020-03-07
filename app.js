@@ -1,6 +1,5 @@
 var colyseus = require('colyseus')
   , ServerIO = require('./server')
-  , ServerChat = require('./chat')
   , Connection = require('./connection')
   , http = require('http')
   , express = require('express')
@@ -69,27 +68,4 @@ app.get('/info/:session', function (request, response) {
     });
 });
 gameServer.register('poker', ServerIO);
-gameServer.register('poker-chat', ServerChat);
 server.listen(port);
-
-// var request = require('request');
-// var url = require("url");
-
-// http.createServer(function (req, res) {
-//   let path = url.parse(req.url).path;
-//   if (path.indexOf('http') === 0) {
-//     request(path, function (error, response, body) {
-//       return res.end(body);
-//     });
-//   }
-//   else {
-//     if (path.indexOf('/assets') === 0) {
-//       path = '/ls/widgets' + path;
-//     }
-//     let xurl = 'https://cs.betradar.com';
-//     xurl += path == '/' ? '/ls/widgets/?/betradar/en/page/widgets_demolmt#matchId=19050236' : path;
-//     request(xurl, function (error, response, body) {
-//       return res.end(body);
-//     });
-//   }
-// }).listen(2657);
