@@ -98,8 +98,7 @@ class Server extends colyseus.Room {
                 client[i] = auth[i];
         }
         this.send(client, {
-            welcome: { ...this.meta, roomID: this.roomId },
-
+            welcome: { ...this.meta, setting: this.setting },
         });
 
         let cl;
