@@ -76,6 +76,7 @@ class Server extends colyseus.Room {
         return ret;
     }
     onJoin(client, options, auth) {
+        console.log(options)
         if (this.first) {
             this.meta = new metaData({
                 id: options.id || null,
@@ -172,8 +173,9 @@ class Server extends colyseus.Room {
 
     }
     sit(client, sit) {
-        if (client.balance < this.meta.min) {
-            this.send(client, { balanceLimit: true });
+        if (client.guest) {
+            console.log('guest')
+            this.send(client, { guest: true });
             return;
         }
         if (this.state.players[sit] == null) {
@@ -186,10 +188,10 @@ class Server extends colyseus.Room {
             this.setClientReady();
             if (!this.state.started)
                 this.canStart();
+            console.log('sit', sit)
             this.send(client, { mySit: sit });
             return true;
         }
-        console.log('sit :' + sit);
         return false;
     }
     checkState(client) {
