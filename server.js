@@ -23,6 +23,7 @@ class metaData {
         this.max = Number(options.max);
         this.player = 7;
         this.ready = 0;
+        this.users = {};
     }
 }
 class Server extends colyseus.Room {
@@ -76,7 +77,6 @@ class Server extends colyseus.Room {
         return ret;
     }
     onJoin(client, options, auth) {
-        console.log(options)
         if (this.first) {
             this.meta = new metaData({
                 id: options.id || null,
@@ -148,9 +148,6 @@ class Server extends colyseus.Room {
             case 'imReady':
                 this.checkStart(client, true)
                 break;
-            case 'call':
-                this.roll(client, value)
-                break;
             case 'chat':
                 if (!('mute' in client))
                     this.chat(client, value)
@@ -174,7 +171,6 @@ class Server extends colyseus.Room {
     }
     sit(client, sit) {
         if (client.guest) {
-            console.log('guest')
             this.send(client, { guest: true });
             return;
         }
@@ -188,7 +184,6 @@ class Server extends colyseus.Room {
             this.setClientReady();
             if (!this.state.started)
                 this.canStart();
-            console.log('sit', sit)
             this.send(client, { mySit: sit });
             return true;
         }
@@ -307,7 +302,7 @@ class Server extends colyseus.Room {
     }
     nextTurn() {
         turn = this.state.turn;
-        let count = 0, end = 7;
+        let count = 0, end = 9;
         for (let i = 0; i < end; i++) {
             let next = (turn + i) % end;
             next = next === 0 ? end : next;
@@ -564,6 +559,7 @@ class Server extends colyseus.Room {
     }
     setClientReady() {
         this.meta.ready = this.ready();
+        this.meta.users = this.state.players;
         this.setMetadata(this.meta);
     }
     ready() {
