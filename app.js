@@ -16,7 +16,7 @@ var server = http.createServer(app)
 app.get('/tableList', function (request, response) {
   response.setHeader('Access-Control-Allow-Origin', '*');
   let ret = {};
-  Connection.query('SELECT * FROM `poker_table` ')
+  Connection.query('SELECT * FROM `poker_table` ORDER BY `order` ASC ')
     .then(results => {
       response.send(results)
     });
@@ -42,29 +42,11 @@ app.get('/info/:session', function (request, response) {
         else if (results[0].mute == 1) {
           ret.data.mute = true;
         }
-        Connection.query('SELECT * FROM `poker_setting` LIMIT 1')
-          .then(results => {
-            ret.setting = results[0];
-            ret.setting.timer = parseInt(ret.setting.timer) * 1000
-            response.send(ret)
-          });
-      } else {
-        ret.result = 'no';
-        Connection.query('SELECT * FROM `poker_setting` LIMIT 1')
-          .then(results => {
-            ret.setting = results[0];
-            ret.setting.timer = parseInt(ret.setting.timer) * 1000
-            response.send(ret)
-          });
+        response.send(ret);
       }
-    }, e => {
-      ret.result = 'no';
-      Connection.query('SELECT * FROM `poker_setting` LIMIT 1')
-        .then(results => {
-          ret.setting = results[0];
-          ret.setting.timer = parseInt(ret.setting.timer) * 1000
-          response.send(ret)
-        });
+      else {
+        response.send({ result: 'no' });
+      }
     });
 });
 gameServer.register('poker', ServerIO);

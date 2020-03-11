@@ -1,6 +1,7 @@
 var colyseus = require('colyseus'),
     request = require("Request"),
     autoBind = require('react-autobind'),
+    Hand = require('pokersolver').Hand,
     Connection = require('./connection');
 
 class State {
@@ -21,7 +22,7 @@ class metaData {
         this.id = options.id;
         this.min = Number(options.min);
         this.max = Number(options.max);
-        this.player = 7;
+        this.player = options.player;
         this.ready = 0;
         this.users = {};
     }
@@ -76,18 +77,21 @@ class Server extends colyseus.Room {
                 });
         return ret;
     }
-    onJoin(client, options, auth) {
+    async onJoin(client, options, auth) {
         if (this.first) {
-            this.meta = new metaData({
-                id: options.id || null,
-                title: options.title || 'Poker',
-                min: options.min || this.setting.minbet,
-                max: options.max || this.setting.maxbet,
-                player: options.player || 7,
-                type: options.type || 'holdem',
-            });
-            this.setMetadata(this.meta);
-            this.state.bet = this.meta.min;
+            await Connection.query('SELECT * FROM `poker_table` WHERE `id` =?  LIMIT 1', [options.id])
+                .then(results => {
+                    this.meta = new metaData({
+                        id: options.id || null,
+                        title: results[0].name || 'no name',
+                        min: results[0].min || this.setting.minbet,
+                        max: results[0].max || this.setting.maxbet,
+                        player: results[0].player || 0,
+                        type: results[0].type || 'holdem',
+                    });
+                    this.setMetadata(this.meta);
+                    this.state.bet = this.meta.min;
+                });
         }
         if ('guest' in auth) {
             client.guest = true;
@@ -110,9 +114,9 @@ class Server extends colyseus.Room {
         }
         if (this.first) {
             this.first = false;
-            this.timer = this.clock.setTimeout(() => {
-                this.sit(client, 4)
-            }, 2000);
+            // this.timer = this.clock.setTimeout(() => {
+            //     this.sit(client, 4)
+            // }, 2000);
 
         }
         for (let sit in this.state.players) {
@@ -196,32 +200,6 @@ class Server extends colyseus.Room {
                 this.standBySit(sit);
                 return;
             }
-            if (['rule'].includes(this.in)) {
-                if (this.ready() == 2) {
-                    this.over();
-                }
-                this.standBySit(sit);
-                if (this.state.turn == sit) {
-                    this.clearTimer();
-                    this.takeRules()
-                }
-                return;
-            }
-            if (['rolling'].includes(this.in)) {
-                if (this.state.players[sit].ready == true && ('dice' in this.state.players[sit])) {
-                    this.state.players[client.sit].leave = true;
-                }
-                else {
-                    this.standBySit(sit);
-                    if (this.ready() < 2) {
-                        this.over();
-                    }
-                    else {
-                        this.checkRoll();
-                    }
-                }
-                return;
-            }
             if ('ready' in this.state.players[sit]) {
                 if (this.state.players[sit].ready == false) {
                     this.standBySit(sit)
@@ -246,24 +224,6 @@ class Server extends colyseus.Room {
             delete this.clients[user].sit;
         this.setClientReady();
     }
-    checkSit(client) {
-        if (!client)
-            return;
-        if (client.balance < this.state.rules.bet) {
-            this.send(client, { balanceLimit: true });
-            // this.stand(client);
-            this.state.players[client.sit].ready = false;
-            this.state.players[client.sit].dice = null;
-        }
-    }
-    checkSits() {
-        let i, user;
-        for (i in this.state.players) {
-            user = this.userBySit(i);
-            if (user > -1)
-                this.checkSit(this.clients[user]);
-        }
-    }
     canStart() {
         this.clearTimer();
         this.timer = this.clock.setTimeout(() => {
@@ -278,9 +238,10 @@ class Server extends colyseus.Room {
     }
     newRound() {
         this.reset();
-        this.state.turn = this.randomRegnant();
-        this.shuffle();
-        this.broadcast({ game: 'start' })
+        this.broadcast({ game: 'start' });
+        this.regnant = this.randomRegnant();
+        this.newLevel();
+        this.dispatch();
         this.setTimer(this.takeAction, 3000);
     }
     takeAction() {
@@ -290,153 +251,144 @@ class Server extends colyseus.Room {
         }
         this.nextAction();
     }
-    nextAction(turn = false) {
-        if (turn == false) {
-            turn = this.state.turn;
-        }
-        else {
-            turn = nextTurn();
-        }
+    nextAction() {
+        console.log('turn ', this.state.turn)
         this.setTimer(this.noAction, this.setting.timer);
-        this.broadcast({ takeAction: turn })
-    }
-    nextTurn() {
-        turn = this.state.turn;
-        let count = 0, end = 9;
-        for (let i = 0; i < end; i++) {
-            let next = (turn + i) % end;
-            next = next === 0 ? end : next;
-            if (i in this.state.players) {
-
-            }
-        }
-
+        this.broadcast({ takeAction: this.state.turn })
     }
     noAction() {
         this.actionIs('fold')
     }
     actionResult(client, [type, value]) {
+        console.log(value)
         this.actionIs(type, value)
-
     }
     actionIs(type, value) {
+        this.clearTimer();
         let sit = this.state.turn;
         let id = this.state.players[sit].id;
         let user = this.userById(id);
         let balance = user > -1 ? this.clients[user].balance : 0;
-        this.clearTimer();
-        if (type == 'fold') {
-
-        }
-        else {
-            this.state.bank = this.add(this.state.bank, 0);
-            this.updateUserBalance(id, balance, - this.state.rules.bet);
-
-            if (type == 'call') {
-
-            }
-            else if (type == 'raise') {
-                let bet = Number(value);
-                if (value > this.state.bet) {
-                    this.state.bet = bet > this.meta.max ? this.state.bet : bet;
-                }
-
-            }
-        }
         this.state.players[sit].state = type;
-    }
-
-
-    roundStart() {
-        this.checkSits();
-        this.in = 'rolling';
-        this.state.rules.bank = 0;
-        let count = 0, i, user;
-        for (i in this.state.players) {
-            if (!('ready' in this.state.players[i])) {
-                user = this.userBySit(i);
-                count++;
-                this.state.players[i].ready = true;
-                if (user > -1)
-                    this.send(this.clients[user], { roll: true });
+        if (type == 'fold') {
+            this.checkResult();
+        }
+        else if (type == 'call') {
+            let userBet = this.state.players[sit].bet || 0;
+            let amount = this.state.bet - userBet;
+            if (balance < amount) {
+                //fold
+                this.checkResult();
+            }
+            else {
+                if (amount > 0) {
+                    this.state.players[sit].bet = this.state.bet;
+                    this.updateUserBalance(id, balance, -amount);
+                    this.state.bank = this.add(this.state.bank, amount);
+                }
+                this.nextTurn();
             }
         }
-        if (count > 1) {
-            this.setTimer(this.autoRoll, this.setting.timer);
-        } else {
-            this.over();
+        else if (type == 'raise') {
+            let userBet = this.state.players[sit].bet || 0;
+            value = Number(value);
+            let amount = value - userBet;
+            if (value > this.state.bet && balance >= value && value <= this.meta.max) {
+                this.state.bet = value;
+                this.updateUserBalance(id, balance, - amount);
+                this.state.players[sit].bet = value;
+                this.state.bank = this.add(this.state.bank, amount);
+                this.nextTurn();
+            }
+            else {
+                //fold
+                this.checkResult();
+            }
+
         }
+
     }
-    call(client, roll) {
-        if (roll) {
-            let dices = [this.random(1, 6), this.random(1, 6)];
-            this.state.players[client.sit].dice = dices;
-            this.state.rules.bank = this.add(this.state.rules.bank, this.state.rules.bet);
-            this.broadcast({ company: client.sit });
-            this.updateUserBalance(client.id, client.balance, - this.state.rules.bet)
-            client.balance = this.add(client.balance, -this.state.rules.bet);
+    nextTurn() {
+        let turn = this.state.turn;
+        let newTurn = null, end = 9;
+        for (let i = 1; i < end; i++) {
+            let next = (turn + i) % end;
+            next = next === 0 ? end : next;
+            if (next in this.state.players) {
+                let userBet = this.state.players[next].bet || 0;
+                if ((userBet < this.state.bet && this.state.players[next].state != 'fold')) {
+                    console.log('next', next, 'bet', userBet, 'state', this.state.players[next].state)
+                    newTurn = next;
+                }
+                else if (this.state.players[next].state == 'new') {
+                    newTurn = next;
+                    console.log('new', next, 'bet', userBet, 'state', this.state.players[next].state)
+                }
+            }
+        }
+        if (newTurn) {
+            this.state.turn = newTurn;
+            this.nextAction();
         }
         else {
-            this.state.players[client.sit].ready = false;
-            this.state.players[client.sit].dice = null;
+            this.checkLevel()
         }
-        this.checkRoll();
     }
-    autoRoll() {
-        let sit;
-        for (sit in this.state.players) {
-            if (('leave' in this.state.players[sit])) {
-                this.state.players[sit].ready = false;
-                this.state.players[sit].dice = null;
-            }
-            else if (this.state.players[sit].ready == true && !('dice' in this.state.players[sit])) {
-                let dices = [this.random(1, 6), this.random(1, 6)];
-                this.state.players[sit].dice = dices;
-                this.state.rules.bank = this.add(this.state.rules.bank, this.state.rules.bet);
-                this.broadcast({ company: sit });
-                let id = this.state.players[sit].id;
-                let user = this.userById(id);
-                let balance = user > -1 ? this.clients[user].balance : 0;
-                this.updateUserBalance(id, balance, -this.state.rules.bet);
-                if (user > -1)
-                    this.clients[user].balance = this.add(this.clients[user].balance, -this.state.rules.bet);
-            }
+    checkLevel() {
+        if (this.level == 1) {
+            this.addtoDeck();
+            this.newLevel();
+            this.nextAction();
         }
-        this.checkRoll();
-
+        else if (this.level == 2) {
+            this.addtoDeck();
+            this.newLevel();
+            this.nextAction();
+        }
+        else if (this.level == 3) {
+            this.addtoDeck();
+            this.newLevel();
+            this.nextAction();
+        }
+        else {
+            console.log('done')
+        }
     }
-    checkRoll() {
-        let pass = true;
-        let count = 0;
-        for (let sit in this.state.players) {
-            if ('ready' in this.state.players[sit]) {
-                if (!('dice' in this.state.players[sit])) {
-                    pass = false;
-                }
-                else if (('dice' in this.state.players[sit]) && this.state.players[sit].dice != null) {
-                    count++;
-                }
+    newLevel() {
+        this.broadcast({ newLevel: this.level })
+        this.state.turn = this.regnant;
+        this.level++;
+        for (let i in this.state.players) {
+            if (this.state.players[i].state != 'fold') {
+                this.state.players[i].state = 'new';
             }
         }
-        if (count < 2 && pass) {
+        console.log('level', this.level);
+    }
+    checkResult() {
+        let count = 1;
+        let player = this.ready();
+        for (let i in this.state.players) {
+            var bet = this.state.players[i].bet || 0;
+            if (this.state.players[i].state == 'fold' && bet == 0) {
+                count++;
+            }
+        }
+        if (player == count) {
             this.over();
-            return;
         }
-        if (pass) {
-            this.clearTimer();
-            this.in = 'rolled';
-            this.clock.setTimeout(this.preResult, 4000);
-        }
+
+
     }
     returnBalance() {
         for (let sit in this.state.players) {
-            if (this.state.players[sit].ready == true && ('dice' in this.state.players[sit])) {
+            if (this.state.players[sit].bet > 0) {
                 let id = this.state.players[sit].id;
                 let user = this.userById(id);
                 let balance = user > -1 ? this.clients[user].balance : 0;
-                this.updateUserBalance(id, balance, this.state.rules.bet);
+                this.updateUserBalance(id, balance, this.state.players[sit].bet);
                 if (user > -1)
-                    this.clients[user].balance += this.state.rules.bet;
+                    this.clients[user].balance += this.state.players[sit].bet;
             }
         }
     }
@@ -444,7 +396,7 @@ class Server extends colyseus.Room {
         if (this.ready() > 1) {
             let date = new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '');
             let point = {
-                bet: this.state.rules.bank, commission: this.setting.commission, time: date
+                bet: this.state.bank, commission: this.setting.commission, time: date
             }
             Connection.query('INSERT INTO `poker_points` SET ?', point)
                 .then(results => {
@@ -481,9 +433,6 @@ class Server extends colyseus.Room {
             }
             let commission = (Number(this.setting.commission) * this.state.rules.bank) / 100;
             let amount = this.add(this.state.rules.bank, -commission);
-            console.log('====================================');
-            console.log(commission, this.state.rules.bank, amount);
-            console.log('====================================');
             amount /= win.length;
             for (sit in company) {
                 user = this.userBySit(sit);
@@ -529,15 +478,18 @@ class Server extends colyseus.Room {
         }
     }
     reset() {
+        this.state.de = {};
         this.userDeck = {};
-        this.level = 1;
+        this.level = 0;
+        this.state.turn = null;
+        this.state.bank = 0;
+        this.state.deck = [];
         this.broadcast({ reset: true });
         this.checkLeave();
-        let i, user;
+        let i;
         for (i in this.state.players) {
             delete this.state.players[i].state;
-            user = this.userBySit(i);
-            this.checkSit(this.clients[user]);
+            delete this.state.players[i].bet;
         }
     }
     over() {
@@ -545,7 +497,7 @@ class Server extends colyseus.Room {
         this.state.started = false;
         this.clearTimer();
         this.reset();
-        this.canStart();
+        this.setTimer(this.canStart, 5000);
     }
     checkLeave() {
         let check = false;
@@ -589,8 +541,9 @@ class Server extends colyseus.Room {
         }
     }
     dispatch() {
+        this.shuffle();
+        this.chunk();
         let i, sit;
-        this.stack[i] = this.readyCards(this.userDeck[i]);
         for (i = 1; i <= this.meta.player; i++) {
             sit = this.userBySit(i);
             if (sit > -1) {
@@ -606,6 +559,12 @@ class Server extends colyseus.Room {
             end = start + size;
             this.userDeck[i] = this.deck.slice(start, end);
         }
+    }
+    addtoDeck() {
+        let len = this.state.deck.length;
+        let end = len == 0 ? 3 : (len == 3 ? 4 : 5);
+        this.state.deck = this.deck.slice(0, end);
+
     }
     chat(client, msg) {
         let message = {
@@ -831,58 +790,58 @@ class Server extends colyseus.Room {
         return (a + b);
     }
     fillDeck(deck) {
-        deck.push('AS');
-        deck.push('KS');
-        deck.push('QS');
-        deck.push('JS');
-        deck.push('TS');
-        deck.push('9S');
-        deck.push('8S');
-        deck.push('7S');
-        deck.push('6S');
-        deck.push('5S');
-        deck.push('4S');
-        deck.push('3S');
-        deck.push('2S');
-        deck.push('AH');
-        deck.push('KH');
-        deck.push('QH');
-        deck.push('JH');
-        deck.push('TH');
-        deck.push('9H');
-        deck.push('8H');
-        deck.push('7H');
-        deck.push('6H');
-        deck.push('5H');
-        deck.push('4H');
-        deck.push('3H');
-        deck.push('2H');
-        deck.push('AD');
-        deck.push('KD');
-        deck.push('QD');
-        deck.push('JD');
-        deck.push('TD');
-        deck.push('9D');
-        deck.push('8D');
-        deck.push('7D');
-        deck.push('6D');
-        deck.push('5D');
-        deck.push('4D');
-        deck.push('3D');
-        deck.push('2D');
-        deck.push('AC');
-        deck.push('KC');
-        deck.push('QC');
-        deck.push('JC');
-        deck.push('TC');
-        deck.push('9C');
-        deck.push('8C');
-        deck.push('7C');
-        deck.push('6C');
-        deck.push('5C');
-        deck.push('4C');
-        deck.push('3C');
-        deck.push('2C');
+        deck.push('As');
+        deck.push('Ks');
+        deck.push('Qs');
+        deck.push('Js');
+        deck.push('Ts');
+        deck.push('9s');
+        deck.push('8s');
+        deck.push('7s');
+        deck.push('6s');
+        deck.push('5s');
+        deck.push('4s');
+        deck.push('3s');
+        deck.push('2s');
+        deck.push('Ah');
+        deck.push('Kh');
+        deck.push('Qh');
+        deck.push('Jh');
+        deck.push('Th');
+        deck.push('9h');
+        deck.push('8h');
+        deck.push('7h');
+        deck.push('6h');
+        deck.push('5h');
+        deck.push('4h');
+        deck.push('3h');
+        deck.push('2h');
+        deck.push('Ad');
+        deck.push('Kd');
+        deck.push('Qd');
+        deck.push('Jd');
+        deck.push('Td');
+        deck.push('9d');
+        deck.push('8d');
+        deck.push('7d');
+        deck.push('6d');
+        deck.push('5d');
+        deck.push('4d');
+        deck.push('3d');
+        deck.push('2d');
+        deck.push('Ac');
+        deck.push('Kc');
+        deck.push('Qc');
+        deck.push('Jc');
+        deck.push('Tc');
+        deck.push('9c');
+        deck.push('8c');
+        deck.push('7c');
+        deck.push('6c');
+        deck.push('5c');
+        deck.push('4c');
+        deck.push('3c');
+        deck.push('2c');
     }
 }
 
