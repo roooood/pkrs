@@ -10,6 +10,7 @@ class State {
         this.turn = null;
         this.players = {};
         this.online = 0;
+        this.cardId = 0;
         this.bet = 0;
         this.bank = 0;
         this.deck = [];
@@ -23,6 +24,7 @@ class metaData {
         this.min = Number(options.min);
         this.max = Number(options.max);
         this.player = options.player;
+        this.type = options.type;
         this.ready = 0;
         this.users = {};
     }
@@ -114,9 +116,10 @@ class Server extends colyseus.Room {
         }
         if (this.first) {
             this.first = false;
-            // this.timer = this.clock.setTimeout(() => {
-            //     this.sit(client, 4)
-            // }, 2000);
+            this.timer = this.clock.setTimeout(() => {
+                // this.sit(client, 4)
+                this.checkMessage();
+            }, 3000);
 
         }
         for (let sit in this.state.players) {
@@ -277,7 +280,7 @@ class Server extends colyseus.Room {
             let userBet = this.state.players[sit].bet || 0;
             let amount = this.state.bet - userBet;
             if (balance < amount) {
-                //fold
+                type = 'fold';
                 this.checkResult();
             }
             else {
@@ -301,12 +304,12 @@ class Server extends colyseus.Room {
                 this.nextTurn();
             }
             else {
-                //fold
+                type = 'fold';
                 this.checkResult();
             }
 
         }
-
+        this.broadcast({ actionIs: [this.state.turn, type] })
     }
     nextTurn() {
         let turn = this.state.turn;
@@ -351,7 +354,7 @@ class Server extends colyseus.Room {
             this.nextAction();
         }
         else {
-            console.log('done')
+            this.preResult();
         }
     }
     newLevel() {
@@ -366,16 +369,23 @@ class Server extends colyseus.Room {
         console.log('level', this.level);
     }
     checkResult() {
-        let count = 1;
+        let count = 1, beting = 1;
         let player = this.ready();
         for (let i in this.state.players) {
             var bet = this.state.players[i].bet || 0;
-            if (this.state.players[i].state == 'fold' && bet == 0) {
+            if (this.state.players[i].state == 'fold') {
                 count++;
+                if (bet == 0) {
+                    beting++;
+                }
             }
         }
         if (player == count) {
-            this.over();
+            if (beting == player)
+                this.over();
+            else {
+                this.preResult();
+            }
         }
 
 
@@ -396,7 +406,7 @@ class Server extends colyseus.Room {
         if (this.ready() > 1) {
             let date = new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '');
             let point = {
-                bet: this.state.bank, commission: this.setting.commission, time: date
+                bank: this.state.bank, commission: this.setting.commission, cardId: this.state.cardId, time: date
             }
             Connection.query('INSERT INTO `poker_points` SET ?', point)
                 .then(results => {
@@ -408,67 +418,69 @@ class Server extends colyseus.Room {
                 });
 
         } else {
-            this.state.started = false;
             this.reset();
         }
     }
     result(xid) {
-        let sit, tmp = [], win = [], lose = [], id, company = {}, sum, user, balance, state;
+        let sit, wins = [], loses = [], id, user, balance, state, winner;
+        let hands = [], hand = {};
         for (sit in this.state.players) {
-            if (this.state.players[sit].ready == true) {
-                sum = this.state.players[sit].dice.reduce((a, b) => a + b);
-                tmp.push(sum);
-                company[sit] = sum;
+            if (this.state.players[sit].state != 'fold') {
+                hand[sit] = Hand.solve([...this.state.deck, this.userDeck[sit]]);
+                hands.push(hand[sit]);
             }
         }
-        if (tmp.length > 1) {
-            let res = this.state.rules.type == 'max' ? Math.max(...tmp) : Math.min(...tmp);
-            for (sit in company) {
-                if (company[sit] == res) {
-                    win.push(parseInt(sit));
+
+        winner = Hand.winners(hands);
+
+        let commission = (Number(this.setting.commission) * this.state.bank) / 100;
+        let amount = this.add(this.state.bank, -commission);
+        amount /= winner.length;
+        for (let win of winner) {
+            for (sit in this.state.players) {
+                if (sit in hand && hand[sit].name == win.name) {
+                    console.log(hand[sit], sit)
+                    hand[sit].win = true;
+                    user = this.userBySit(sit);
+                    id = this.state.players[sit].id;
+                    balance = user > -1 ? this.clients[user].balance : 0;
+                    this.updateUserBalance(id, balance, amount);
+                    if (user > -1) {
+                        this.clients[user].balance += amount;
+                    }
+                    wins.push(sit)
                 }
                 else {
-                    lose.push(parseInt(sit));
+                    loses.push(sit)
                 }
             }
-            let commission = (Number(this.setting.commission) * this.state.rules.bank) / 100;
-            let amount = this.add(this.state.rules.bank, -commission);
-            amount /= win.length;
-            for (sit in company) {
-                user = this.userBySit(sit);
-                if (company[sit] == res) {
-                    state = true;
-                    if (user > -1)
-                        this.send(this.clients[user], { win: true });
-                }
-                else {
-                    state = false;
-                    if (user > -1)
-                        this.send(this.clients[user], { lose: true });
-                }
-
-                let result = {
-                    pid: xid,
-                    uid: this.state.players[sit].id,
-                    cash: state ? amount : this.state.rules.bet,
-                    type: state ? 'win' : 'lose'
-                }
-                Connection.query('INSERT INTO `poker_result` SET ?', result);
-            }
-
-            for (sit of win) {
-                user = this.userBySit(sit);
-                id = this.state.players[sit].id;
-                balance = user > -1 ? this.clients[user].balance : 0;
-                this.updateUserBalance(id, balance, amount);
-                if (user > -1) {
-                    this.clients[user].balance += amount;
-                }
-            }
-            this.broadcast({ result: { win, lose } });
-
         }
-        this.setTimer(this.canStart, 2500);
+        for (sit in this.state.players) {
+            user = this.userBySit(sit);
+            if (sit in hand && 'win' in hand[sit]) {
+                state = true;
+                if (user > -1)
+                    this.send(this.clients[user], { win: true });
+            }
+            else {
+                state = false;
+                if (user > -1)
+                    this.send(this.clients[user], { lose: true });
+            }
+
+            let result = {
+                pid: xid,
+                uid: this.state.players[sit].id,
+                cash: state ? amount : this.state.players[sit].bet,
+                type: state ? 'win' : 'lose'
+            }
+            Connection.query('INSERT INTO `poker_result` SET ?', result);
+        }
+
+        this.broadcast({ result: { wins, loses } });
+
+
+        this.setTimer(this.over, 2500);
     }
     sendToPlayer(option) {
         for (let client in this.clients) {
@@ -541,10 +553,34 @@ class Server extends colyseus.Room {
         }
     }
     dispatch() {
+        console.log('dispatch', this.meta)
         this.shuffle();
         this.chunk();
+
+        let cards = {
+            cards: this.deck.slice(0, 5).join(',')
+        }
+        Connection.query('INSERT INTO `poker_cards` SET ?', cards)
+            .then(results => {
+                Connection.query('SELECT LAST_INSERT_ID() AS `last_id` ')
+                    .then(result => {
+                        this.state.cardId = result[0]['last_id'];
+                        let i, sit;
+                        for (i = 1; i <= 9; i++) {
+                            sit = this.userBySit(i);
+                            if (sit > -1) {
+                                this.send(this.clients[sit], { myCards: this.userDeck[i] });
+                                let hands = {
+                                    cardId: this.state.cardId, user: this.clients[sit].id, cards: this.userDeck[i].join(',')
+                                }
+                                Connection.query('INSERT INTO `poker_hands` SET ?', hands)
+                            }
+                        }
+                    });
+            });
+
         let i, sit;
-        for (i = 1; i <= this.meta.player; i++) {
+        for (i = 1; i <= 9; i++) {
             sit = this.userBySit(i);
             if (sit > -1) {
                 this.send(this.clients[sit], { myCards: this.userDeck[i] });
@@ -552,9 +588,10 @@ class Server extends colyseus.Room {
         }
     }
     chunk() {
-        let size = 2;
+        console.log(this.meta)
+        let size = this.meta.type == 'holdem' ? 2 : 4;
         let i, start, end;
-        for (i = 1; i <= this.meta.player; i++) {
+        for (i = 1; i <= 9; i++) {
             start = (i * size) + 10;
             end = start + size;
             this.userDeck[i] = this.deck.slice(start, end);
@@ -568,7 +605,7 @@ class Server extends colyseus.Room {
     }
     chat(client, msg) {
         let message = {
-            uid: client.id, text: msg, type: 'game'
+            uid: client.id, tid: this.meta.id, text: msg
         }
         Connection.query('INSERT INTO `poker_message` SET ?', message)
             .then(results => {
@@ -592,7 +629,8 @@ class Server extends colyseus.Room {
     }
     checkMessage() {
         let len = this.state.message.length;
-        Connection.query('SELECT `poker_message`.*,`users`.`username` FROM `poker_message`  LEFT JOIN `users`  ON `poker_message`.`uid`=`users`.`userId` ORDER BY `poker_message`. `id` DESC LIMIT ' + len)
+        len = len < 20 ? 20 : len;
+        Connection.query('SELECT `poker_message`.*,`users`.`username` FROM `poker_message`  LEFT JOIN `users`  ON `poker_message`.`uid`=`users`.`userId` WHERE `poker_message`.`tid` = ? ORDER BY `poker_message`. `id` DESC LIMIT ?', [this.meta.id, len])
             .then(results => {
                 let res, data = [];
                 for (res of results) {

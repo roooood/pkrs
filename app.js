@@ -25,7 +25,7 @@ app.get('/info/:session', function (request, response) {
   response.setHeader('Access-Control-Allow-Origin', '*');
   var req = request.params
   let ret = {};
-  Connection.query('SELECT * FROM `users` LEFT JOIN `wallets` ON `users`.`token` = `wallets`.`token` where `users`.`token`=? LIMIT 1', [req.session])
+  Connection.query('SELECT * FROM `users` LEFT JOIN `wallets` ON `users`.`token` = `wallets`.`token` LEFT JOIN `poker_users` ON `users`.`userId` = `poker_users`.`uid` where `users`.`token`=? LIMIT 1', [req.session])
     .then(results => {
       if (results[0] != null) {
         ret = {
@@ -33,6 +33,7 @@ app.get('/info/:session', function (request, response) {
           data: {
             id: results[0].userId,
             name: results[0].username,
+            avatar: results[0].avatar,
             balance: results[0].balance
           }
         };
