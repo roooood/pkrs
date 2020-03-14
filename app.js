@@ -21,6 +21,33 @@ app.get('/tableList', function (request, response) {
       response.send(results)
     });
 })
+app.get('/avatar/:avatar/:session', function (request, response) {
+  response.setHeader('Access-Control-Allow-Origin', '*');
+  var req = request.params
+  let ret = {};
+  Connection.query('SELECT * FROM `users`  where `token`=? LIMIT 1', [req.session])
+    .then(results => {
+      if (results[0] != null) {
+        Connection.query('SELECT * FROM `poker_users`  where `uid`=? LIMIT 1', [results[0].userId])
+          .then(results2 => {
+            if (results2[0] == null) {
+              let sql = {
+                uid: results[0].userId,
+                avatar: req.avatar
+              }
+              Connection.query('INSERT INTO `poker_users` SET ?', sql);
+              response.send({ result: 'ok' });
+            }
+            else {
+              response.send({ result: '-' });
+            }
+          });
+      }
+      else {
+        response.send({ result: 'no' });
+      }
+    });
+});
 app.get('/info/:session', function (request, response) {
   response.setHeader('Access-Control-Allow-Origin', '*');
   var req = request.params
