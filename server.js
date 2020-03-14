@@ -234,7 +234,7 @@ class Server extends colyseus.Room {
             if (this.ready() > 1) {
                 this.start();
             }
-        }, 1500);
+        }, 5000);
     }
     start() {
         this.state.started = true;
@@ -253,10 +253,20 @@ class Server extends colyseus.Room {
             this.state.started = false;
             return;
         }
+        this.state.players[this.state.turn].type = 'D';
+
+        this.nextTurn(false);
+        this.actionIs('call', this.state.bet);
+        this.state.players[this.state.turn].type = 'sB';
+
+        if (this.meta.player > 2) {
+            this.nextTurn(false);
+            this.actionIs('raise', this.meta.max);
+            this.state.players[this.state.turn].type = 'bB';
+        }
         this.nextAction();
     }
     nextAction() {
-        console.log('turn ', this.state.turn)
         this.setTimer(this.noAction, this.setting.timer);
         this.broadcast({ takeAction: this.state.turn })
     }
@@ -264,7 +274,6 @@ class Server extends colyseus.Room {
         this.actionIs('fold')
     }
     actionResult(client, [type, value]) {
-        console.log(value)
         this.actionIs(type, value)
     }
     actionIs(type, value) {
@@ -297,7 +306,7 @@ class Server extends colyseus.Room {
             let userBet = this.state.players[sit].bet || 0;
             value = Number(value);
             let amount = value - userBet;
-            if (value > this.state.bet && balance >= value && value <= this.meta.max) {
+            if (value > this.state.bet && balance >= amount) {
                 this.state.bet = value;
                 this.updateUserBalance(id, balance, - amount);
                 this.state.players[sit].bet = value;
@@ -312,7 +321,7 @@ class Server extends colyseus.Room {
         }
         this.broadcast({ actionIs: [this.state.turn, type] })
     }
-    nextTurn() {
+    nextTurn(action=true) {
         let turn = this.state.turn;
         let newTurn = null, end = 9;
         for (let i = 1; i < end; i++) {
@@ -321,18 +330,17 @@ class Server extends colyseus.Room {
             if (next in this.state.players) {
                 let userBet = this.state.players[next].bet || 0;
                 if ((userBet < this.state.bet && this.state.players[next].state != 'fold')) {
-                    console.log('next', next, 'bet', userBet, 'state', this.state.players[next].state)
                     newTurn = next;
                 }
                 else if (this.state.players[next].state == 'new') {
                     newTurn = next;
-                    console.log('new', next, 'bet', userBet, 'state', this.state.players[next].state)
                 }
             }
         }
         if (newTurn) {
             this.state.turn = newTurn;
-            this.nextAction();
+            if (action)
+                this.nextAction();
         }
         else {
             this.checkLevel()
@@ -367,7 +375,6 @@ class Server extends colyseus.Room {
                 this.state.players[i].state = 'new';
             }
         }
-        console.log('level', this.level);
     }
     checkResult() {
         let count = 1, beting = 1;
@@ -440,7 +447,6 @@ class Server extends colyseus.Room {
         for (let win of winner) {
             for (sit in this.state.players) {
                 if (sit in hand && hand[sit].name == win.name) {
-                    console.log(hand[sit], sit)
                     hand[sit].win = true;
                     user = this.userBySit(sit);
                     id = this.state.players[sit].id;
@@ -554,7 +560,6 @@ class Server extends colyseus.Room {
         }
     }
     dispatch() {
-        console.log('dispatch', this.meta)
         this.shuffle();
         this.chunk();
 
@@ -589,7 +594,6 @@ class Server extends colyseus.Room {
         }
     }
     chunk() {
-        console.log(this.meta)
         let size = this.meta.type == 'holdem' ? 2 : 4;
         let i, start, end;
         for (i = 1; i <= 9; i++) {
