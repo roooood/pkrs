@@ -63,6 +63,7 @@ class Server extends colyseus.Room {
                         ret = {
                             id: results[0].userId,
                             name: results[0].username,
+                            avatar: results[0].avatar,
                             balance: results[0].balance || 0
                         };
                         if (results[0].admin == 1) {
@@ -187,7 +188,7 @@ class Server extends colyseus.Room {
             }
             this.stand(client);
             client.sit = sit;
-            this.state.players[sit] = { id: client.id, name: client.name, balance: client.balance };
+            this.state.players[sit] = { id: client.id, name: client.name, avatar: client.avatar, balance: client.balance };
             this.setClientReady();
             if (!this.state.started)
                 this.canStart();
