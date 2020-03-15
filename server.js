@@ -588,6 +588,7 @@ class Server extends colyseus.Room {
         this.chunk();
 
         let cards = {
+            tid : this.meta.id,
             cards: this.deck.slice(0, 5).join(',')
         }
         Connection.query('INSERT INTO `poker_cards` SET ?', cards)
@@ -655,6 +656,21 @@ class Server extends colyseus.Room {
     }
     arraysEqual(a1, a2) {
         return a1.length === a2.length && a1.every((o, idx) => this.objectsEqual(o, a2[idx]));
+    }
+    checkMessage() {
+        len = 15;
+        Connection.query('SELECT `poker_cards`.*,`poker_result`.`bank` FROM `poker_cards`  LEFT JOIN `poker_result`  ON `poker_result`.`cardId`=`poker_cards`.`id` WHERE `poker_cards`.`tid` = ? LIMIT ?', [this.meta.id, len])
+            .then(results => {
+                let res, data = [];
+                for (res of results) {
+                    data.push({
+                        id: res.id,
+                        cards: res.cards,
+                        bank: res.bank
+                    })
+                }
+                console.log(data)
+            });
     }
     checkMessage() {
         let len = this.state.message.length;
@@ -732,7 +748,7 @@ class Server extends colyseus.Room {
     }
     updateUserBalance(id, balance, amount) {
         let user = this.userById(id);
-        console.log(amount)
+        console.log('amount',amount)
         if (user > -1)
             this.send(this.clients[user], { balance: [balance, amount] })
         return;
