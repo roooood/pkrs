@@ -15,6 +15,7 @@ class State {
         this.bank = 0;
         this.deck = [];
         this.message = [];
+        this.history = [];
     }
 }
 class metaData {
@@ -119,6 +120,7 @@ class Server extends colyseus.Room {
             this.first = false;
             this.timer = this.clock.setTimeout(() => {
                 // this.sit(client, 4)
+                this.checkCards();
                 this.checkMessage();
             }, 3000);
 
@@ -256,18 +258,16 @@ class Server extends colyseus.Room {
             this.state.started = false;
             return;
         }
-        console.log('turn', this.state.turn)
         this.state.players[this.state.turn].type = 'D';
 
         this.nextTurn(false);
-        console.log('turn', this.state.turn)
-        this.actionIs('call', this.state.bet);
         this.state.players[this.state.turn].type = 'sB';
+        this.actionIs('call', this.state.bet, false);
 
         if (this.meta.player > 2) {
             this.nextTurn(false);
-            this.actionIs('raise', this.meta.max);
             this.state.players[this.state.turn].type = 'bB';
+            this.actionIs('raise', this.meta.max,false);
         }
         this.nextTurn(false);
         this.nextAction();
@@ -292,7 +292,7 @@ class Server extends colyseus.Room {
     actionResult(client, [type, value]) {
         this.actionIs(type, value)
     }
-    actionIs(type, value) {
+    actionIs(type, value,action=true) {
         this.clearTimer();
         let sit = this.state.turn;
         let id = this.state.players[sit].id;
@@ -315,6 +315,7 @@ class Server extends colyseus.Room {
                     this.updateUserBalance(id, balance, -amount);
                     this.state.bank = this.add(this.state.bank, amount);
                 }
+                if (action)
                 this.nextTurn();
             }
         }
@@ -327,6 +328,7 @@ class Server extends colyseus.Room {
                 this.updateUserBalance(id, balance, - amount);
                 this.state.players[sit].bet = value;
                 this.state.bank = this.add(this.state.bank, amount);
+                if(action)
                 this.nextTurn();
             }
             else {
@@ -340,33 +342,37 @@ class Server extends colyseus.Room {
             this.updateUserBalance(id, balance, - balance);
             this.state.players[sit].bet = this.state.bet;
             this.state.bank = this.add(this.state.bank, balance);
+            if (action)
             this.nextTurn();
         }
         this.broadcast({ actionIs: [this.state.turn, type] })
     }
     nextTurn(action=true) {
         let turn = this.state.turn;
-        let newTurn = null, end = 9;
+        let newTurn = false, end = 9;
         for (let i = 1; i < end; i++) {
             let next = (turn + i) % end;
             next = next === 0 ? end : next;
+            console.log('nn', next)
             if (next in this.state.players) {
                 let userBet = this.state.players[next].bet || 0;
-                if ((userBet < this.state.bet && this.state.players[next].state != 'fold')) {
+                if ((userBet < this.state.bet && !['fold', 'allin'].includes(this.state.players[next].state))) {
                     newTurn = next;
+                    break;
                 }
                 else if (this.state.players[next].state == 'new') {
                     newTurn = next;
+                    break;
                 }
             }
         }
-        if (newTurn) {
+        if (newTurn === false) {
+            this.checkLevel()
+        }
+        else {
             this.state.turn = newTurn;
             if (action)
                 this.nextAction();
-        }
-        else {
-            this.checkLevel()
         }
     }
     checkLevel() {
@@ -394,7 +400,7 @@ class Server extends colyseus.Room {
         this.state.turn = this.regnant;
         this.level++;
         for (let i in this.state.players) {
-            if (this.state.players[i].state != 'fold') {
+            if (!['fold','allin'].includes(this.state.players[i].state)) {
                 this.state.players[i].state = 'new';
             }
         }
@@ -490,12 +496,12 @@ class Server extends colyseus.Room {
             if (sit in hand && 'win' in hand[sit]) {
                 state = true;
                 if (user > -1)
-                    this.send(this.clients[user], { win: true });
+                    this.send(this.clients[user], { win: amount });
             }
             else {
                 state = false;
                 if (user > -1)
-                    this.send(this.clients[user], { lose: true });
+                    this.send(this.clients[user], { lose: this.state.players[sit].bet });
             }
 
             let result = {
@@ -657,9 +663,9 @@ class Server extends colyseus.Room {
     arraysEqual(a1, a2) {
         return a1.length === a2.length && a1.every((o, idx) => this.objectsEqual(o, a2[idx]));
     }
-    checkMessage() {
-        len = 15;
-        Connection.query('SELECT `poker_cards`.*,`poker_result`.`bank` FROM `poker_cards`  LEFT JOIN `poker_result`  ON `poker_result`.`cardId`=`poker_cards`.`id` WHERE `poker_cards`.`tid` = ? LIMIT ?', [this.meta.id, len])
+    checkCards() {
+        let len = 15;
+        Connection.query('SELECT `poker_cards`.*,`poker_points`.`bank` FROM `poker_cards`  RIGHT JOIN `poker_points`  ON `poker_points`.`cardId`=`poker_cards`.`id` WHERE `poker_cards`.`tid` = ? LIMIT ?', [this.meta.id, len])
             .then(results => {
                 let res, data = [];
                 for (res of results) {
@@ -669,7 +675,7 @@ class Server extends colyseus.Room {
                         bank: res.bank
                     })
                 }
-                console.log(data)
+                this.state.history = data; 
             });
     }
     checkMessage() {
@@ -748,7 +754,6 @@ class Server extends colyseus.Room {
     }
     updateUserBalance(id, balance, amount) {
         let user = this.userById(id);
-        console.log('amount',amount)
         if (user > -1)
             this.send(this.clients[user], { balance: [balance, amount] })
         return;
