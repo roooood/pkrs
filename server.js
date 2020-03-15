@@ -353,16 +353,18 @@ class Server extends colyseus.Room {
         for (let i = 1; i < end; i++) {
             let next = (turn + i) % end;
             next = next === 0 ? end : next;
-            console.log('nn', next)
             if (next in this.state.players) {
-                let userBet = this.state.players[next].bet || 0;
-                if ((userBet < this.state.bet && !['fold', 'allin'].includes(this.state.players[next].state))) {
-                    newTurn = next;
-                    break;
-                }
-                else if (this.state.players[next].state == 'new') {
-                    newTurn = next;
-                    break;
+                if (!['fold', 'allin'].includes(this.state.players[next].state)) {
+                    console.log(this.state.players[next])
+                    let userBet = this.state.players[next].bet || 0;
+                    if (userBet < this.state.bet) {
+                        newTurn = next;
+                        break;
+                    }
+                    else if (this.state.players[next].state == 'new') {
+                        newTurn = next;
+                        break;
+                    }
                 }
             }
         }
