@@ -509,6 +509,7 @@ class Server extends colyseus.Room {
         for (i in this.state.players) {
             delete this.state.players[i].state;
             delete this.state.players[i].bet;
+            delete this.state.players[i].type;
         }
     }
     over() {
