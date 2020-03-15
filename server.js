@@ -199,10 +199,13 @@ class Server extends colyseus.Room {
     }
     checkState(client) {
         let sit = client.sit || 0;
-        if (sit > 0) {
+        if (sit > 0 && this.state.players[sit].state !='fold') {
             if (!this.state.started) {
                 this.standBySit(sit);
                 return;
+            }
+            else {
+                this.send(client, { cantStandErr: true });
             }
             if ('ready' in this.state.players[sit]) {
                 if (this.state.players[sit].ready == false) {
@@ -253,9 +256,11 @@ class Server extends colyseus.Room {
             this.state.started = false;
             return;
         }
+        console.log('turn', this.state.turn)
         this.state.players[this.state.turn].type = 'D';
 
         this.nextTurn(false);
+        console.log('turn', this.state.turn)
         this.actionIs('call', this.state.bet);
         this.state.players[this.state.turn].type = 'sB';
 
@@ -264,11 +269,22 @@ class Server extends colyseus.Room {
             this.actionIs('raise', this.meta.max);
             this.state.players[this.state.turn].type = 'bB';
         }
+        this.nextTurn(false);
         this.nextAction();
     }
     nextAction() {
-        this.setTimer(this.noAction, this.setting.timer);
-        this.broadcast({ takeAction: this.state.turn })
+        let sit = this.state.turn;
+        let id = this.state.players[sit].id;
+        let user = this.userById(id);
+        let balance = user > -1 ? this.clients[user].balance : 0;
+        let userBet = this.state.players[sit].bet || 0;
+        if (balance + userBet < this.state.bet) {
+            this.noAction();
+        }
+        else {
+            this.setTimer(this.noAction, this.setting.timer);
+            this.broadcast({ takeAction: this.state.turn })
+        }
     }
     noAction() {
         this.actionIs('fold')
@@ -306,7 +322,7 @@ class Server extends colyseus.Room {
             let userBet = this.state.players[sit].bet || 0;
             value = Number(value);
             let amount = value - userBet;
-            if (value > this.state.bet && balance >= amount) {
+            if (balance >= amount) {
                 this.state.bet = value;
                 this.updateUserBalance(id, balance, - amount);
                 this.state.players[sit].bet = value;
@@ -318,6 +334,13 @@ class Server extends colyseus.Room {
                 this.checkResult();
             }
 
+        }
+        else if (type == 'allin') {
+            this.state.bet += balance;
+            this.updateUserBalance(id, balance, - balance);
+            this.state.players[sit].bet = this.state.bet;
+            this.state.bank = this.add(this.state.bank, balance);
+            this.nextTurn();
         }
         this.broadcast({ actionIs: [this.state.turn, type] })
     }
@@ -709,6 +732,7 @@ class Server extends colyseus.Room {
     }
     updateUserBalance(id, balance, amount) {
         let user = this.userById(id);
+        console.log(amount)
         if (user > -1)
             this.send(this.clients[user], { balance: [balance, amount] })
         return;
