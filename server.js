@@ -13,7 +13,7 @@ class State {
         this.cardId = 0;
         this.bet = 0;
         this.bank = 0;
-        this.deck = [];
+        this.deck = ['Ad', 'As', 'Jc', 'Th', '2d'];
         this.message = [];
         this.history = [];
     }
@@ -138,6 +138,7 @@ class Server extends colyseus.Room {
         this.state.online = this.state.online + 1;
     }
     onMessage(client, message) {
+        console.log(message)
         let type = Object.keys(message)[0];
         if (client.guest == true) {
             return;
@@ -261,12 +262,10 @@ class Server extends colyseus.Room {
         this.state.players[this.state.turn].type = 'D';
 
         this.nextTurn(false);
-        this.state.players[this.state.turn].type = 'sB';
         this.actionIs('call', this.state.bet, false);
 
         if (this.meta.player > 2) {
             this.nextTurn(false);
-            this.state.players[this.state.turn].type = 'bB';
             this.actionIs('raise', this.meta.max,false);
         }
         this.nextTurn(false);
@@ -292,7 +291,7 @@ class Server extends colyseus.Room {
     actionResult(client, [type, value]) {
         this.actionIs(type, value)
     }
-    actionIs(type, value,action=true) {
+    actionIs(type, value,action=true){
         this.clearTimer();
         let sit = this.state.turn;
         let id = this.state.players[sit].id;
@@ -345,7 +344,7 @@ class Server extends colyseus.Room {
             if (action)
             this.nextTurn();
         }
-        this.broadcast({ actionIs: [this.state.turn, type] })
+        this.broadcast({ actionIs: [sit, type] })
     }
     nextTurn(action=true) {
         let turn = this.state.turn;
@@ -355,7 +354,6 @@ class Server extends colyseus.Room {
             next = next === 0 ? end : next;
             if (next in this.state.players) {
                 if (!['fold', 'allin'].includes(this.state.players[next].state)) {
-                    console.log(this.state.players[next])
                     let userBet = this.state.players[next].bet || 0;
                     if (userBet < this.state.bet) {
                         newTurn = next;
@@ -402,7 +400,7 @@ class Server extends colyseus.Room {
         this.state.turn = this.regnant;
         this.level++;
         for (let i in this.state.players) {
-            if (!['fold','allin'].includes(this.state.players[i].state)) {
+            if (!['fold', 'allin'].includes(this.state.players[i].state)) {
                 this.state.players[i].state = 'new';
             }
         }
@@ -461,7 +459,7 @@ class Server extends colyseus.Room {
         }
     }
     result(xid) {
-        let sit, wins = [], loses = [], id, user, balance, state, winner;
+        let sit, wins = {}, loses = [], id, user, balance, state, winner;
         let hands = [], hand = {};
         for (sit in this.state.players) {
             if (this.state.players[sit].state != 'fold') {
@@ -477,7 +475,7 @@ class Server extends colyseus.Room {
         amount /= winner.length;
         for (let win of winner) {
             for (sit in this.state.players) {
-                if (sit in hand && hand[sit].name == win.name) {
+                if (sit in hand && hand[sit].cardPool.toString() == win.cardPool.toString()) {
                     hand[sit].win = true;
                     user = this.userBySit(sit);
                     id = this.state.players[sit].id;
@@ -486,13 +484,14 @@ class Server extends colyseus.Room {
                     if (user > -1) {
                         this.clients[user].balance += amount;
                     }
-                    wins.push(sit)
+                    wins[sit] = [win.cards.toString().split(' '), this.userDeck[sit]];
                 }
                 else {
                     loses.push(sit)
                 }
             }
         }
+
         for (sit in this.state.players) {
             user = this.userBySit(sit);
             if (sit in hand && 'win' in hand[sit]) {
@@ -515,10 +514,10 @@ class Server extends colyseus.Room {
             Connection.query('INSERT INTO `poker_result` SET ?', result);
         }
 
-        this.broadcast({ result: { wins, loses } });
+        this.broadcast({ gameResult: { wins, loses } });
 
 
-        this.setTimer(this.over, 2500);
+        this.setTimer(this.over, Object.key(wins)*3000+2000);
     }
     sendToPlayer(option) {
         for (let client in this.clients) {
@@ -568,7 +567,6 @@ class Server extends colyseus.Room {
     ready() {
         return Object.keys(this.state.players).length;
     }
-
     randomRegnant() {
         let rand = Object.keys(this.state.players);
         let get = this.random(0, rand.length);
