@@ -1,7 +1,7 @@
 var colyseus = require('colyseus'),
     request = require("Request"),
     autoBind = require('react-autobind'),
-    Hand = require('pokersolver').Hand,
+    pokerCalc = require('poker-calc'),
     Connection = require('./connection');
 
 class State {
@@ -13,7 +13,7 @@ class State {
         this.cardId = 0;
         this.bet = 0;
         this.bank = 0;
-        this.deck = ['Ad', 'As', 'Jc', 'Th', '2d'];
+        this.deck = [];
         this.message = [];
         this.history = [];
     }
@@ -138,7 +138,7 @@ class Server extends colyseus.Room {
         this.state.online = this.state.online + 1;
     }
     onMessage(client, message) {
-        console.log(message)
+
         let type = Object.keys(message)[0];
         if (client.guest == true) {
             return;
@@ -291,7 +291,8 @@ class Server extends colyseus.Room {
     actionResult(client, [type, value]) {
         this.actionIs(type, value)
     }
-    actionIs(type, value,action=true){
+    actionIs(type, value, action = true) {
+        console.log(type, value)
         this.clearTimer();
         let sit = this.state.turn;
         let id = this.state.players[sit].id;
@@ -300,6 +301,10 @@ class Server extends colyseus.Room {
         this.state.players[sit].state = type;
         if (type == 'fold') {
             this.checkResult();
+        }
+        else if(type == 'check') {
+            if (action)
+                this.nextTurn();
         }
         else if (type == 'call') {
             let userBet = this.state.players[sit].bet || 0;
@@ -459,47 +464,56 @@ class Server extends colyseus.Room {
         }
     }
     result(xid) {
-        let sit, wins = {}, loses = [], id, user, balance, state, winner;
-        let hands = [], hand = {};
+        console.log(this.state.deck);
+        var params = {
+            boardCards: ['Ad', 'As', 'Jc', 'Th', '2d'],
+            playerCards:
+                [
+                    { playerId: "1", cards: ['3c', 'Kd'] },
+                    { playerId: "2", cards: ['Qs', 'Qd'] }
+                ]
+        }
+
+       
+
+
+        let sit, wins = {}, id, user, balance, state, winner;
+        let playerCards = [], boardCards = this.state.deck;
         for (sit in this.state.players) {
             if (this.state.players[sit].state != 'fold') {
-                hand[sit] = Hand.solve([...this.state.deck, this.userDeck[sit]]);
-                hands.push(hand[sit]);
+                playerCards.push({
+                    playerId: sit, cards: this.userDeck[sit]
+                })
+                console.log(this.userDeck[sit]);
             }
         }
 
-        winner = Hand.winners(hands);
-
+        winner = pokerCalc.getHoldemWinner({ boardCards, playerCards}, { compactCards: true });
+        
         let commission = (Number(this.setting.commission) * this.state.bank) / 100;
         let amount = this.add(this.state.bank, -commission);
         amount /= winner.length;
         for (let win of winner) {
-            for (sit in this.state.players) {
-                if (sit in hand && hand[sit].cardPool.toString() == win.cardPool.toString()) {
-                    hand[sit].win = true;
-                    user = this.userBySit(sit);
-                    id = this.state.players[sit].id;
-                    balance = user > -1 ? this.clients[user].balance : 0;
-                    this.updateUserBalance(id, balance, amount);
-                    if (user > -1) {
-                        this.clients[user].balance += amount;
-                    }
-                    wins[sit] = [win.cards.toString().split(' '), this.userDeck[sit]];
-                }
-                else {
-                    loses.push(sit)
-                }
-            }
+            console.log(win)
+            let sit = win.playerId;
+            user = this.userBySit(sit);
+            id = this.state.players[sit].id;
+            balance = user > -1 ? this.clients[user].balance : 0;
+            this.updateUserBalance(id, balance, amount);
+            if (user > -1) {
+                this.clients[user].balance += amount;
+            }       
+            wins[sit] = [win.hand.cards, this.userDeck[sit], win.hand.handInfo];      
         }
 
         for (sit in this.state.players) {
             user = this.userBySit(sit);
-            if (sit in hand && 'win' in hand[sit]) {
+            if (sit in wins) {
                 state = true;
                 if (user > -1)
                     this.send(this.clients[user], { win: amount });
             }
-            else {
+            else if (this.state.players[sit].bet > 0){
                 state = false;
                 if (user > -1)
                     this.send(this.clients[user], { lose: this.state.players[sit].bet });
@@ -513,11 +527,11 @@ class Server extends colyseus.Room {
             }
             Connection.query('INSERT INTO `poker_result` SET ?', result);
         }
+        console.log(wins);
+        this.broadcast({ gameResult:  wins});
 
-        this.broadcast({ gameResult: { wins, loses } });
 
-
-        this.setTimer(this.over, Object.key(wins)*3000+2000);
+        this.setTimer(this.over, Object.keys(wins)*3000+20000);
     }
     sendToPlayer(option) {
         for (let client in this.clients) {
@@ -883,7 +897,7 @@ class Server extends colyseus.Room {
         deck.push('Ks');
         deck.push('Qs');
         deck.push('Js');
-        deck.push('Ts');
+        deck.push('10s');
         deck.push('9s');
         deck.push('8s');
         deck.push('7s');
@@ -896,7 +910,7 @@ class Server extends colyseus.Room {
         deck.push('Kh');
         deck.push('Qh');
         deck.push('Jh');
-        deck.push('Th');
+        deck.push('10h');
         deck.push('9h');
         deck.push('8h');
         deck.push('7h');
@@ -909,7 +923,7 @@ class Server extends colyseus.Room {
         deck.push('Kd');
         deck.push('Qd');
         deck.push('Jd');
-        deck.push('Td');
+        deck.push('10d');
         deck.push('9d');
         deck.push('8d');
         deck.push('7d');
@@ -922,7 +936,7 @@ class Server extends colyseus.Room {
         deck.push('Kc');
         deck.push('Qc');
         deck.push('Jc');
-        deck.push('Tc');
+        deck.push('10c');
         deck.push('9c');
         deck.push('8c');
         deck.push('7c');
