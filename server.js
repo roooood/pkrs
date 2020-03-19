@@ -190,6 +190,10 @@ class Server extends colyseus.Room {
             this.send(client, { guest: true });
             return;
         }
+        else if (client.balance < this.meta.min) {
+            this.send(client, { error: 'balance' });
+            return;
+        }
         if (this.state.players[sit] == null) {
             if (client.sit > 0 && this.state.started) {
                 return;
@@ -531,7 +535,7 @@ class Server extends colyseus.Room {
         this.broadcast({ gameResult:  wins});
         this.checkCards();
 
-        this.setTimer(this.over, Object.keys(wins)*3000);
+        this.setTimer(this.over, Object.keys(wins)*5000);
     }
     sendToPlayer(option) {
         for (let client in this.clients) {
@@ -561,7 +565,7 @@ class Server extends colyseus.Room {
         this.state.started = false;
         this.clearTimer();
         this.reset();
-        this.setTimer(this.canStart, 3000);
+        this.setTimer(this.canStart, 2000);
     }
     checkLeave() {
         let check = false;
