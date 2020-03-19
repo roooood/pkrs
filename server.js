@@ -530,7 +530,7 @@ class Server extends colyseus.Room {
         this.broadcast({ gameResult:  wins});
 
 
-        this.setTimer(this.over, Object.keys(wins)*3000+20000);
+        this.setTimer(this.over, Object.keys(wins)*3000+2000);
     }
     sendToPlayer(option) {
         for (let client in this.clients) {
