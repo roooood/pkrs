@@ -176,8 +176,10 @@ class Server extends colyseus.Room {
     }
     onLeave(client, consented) {
         this.state.online = this.state.online - 1;
-        this.state.players[client.sit].leave = true;
-        this.state.players[client.sit].state = 'fold';
+        if (this.state.started && client.sit > 0) {
+            this.state.players[client.sit].leave = true;
+            this.state.players[client.sit].state = 'fold';
+        }
         this.checkState(client)
     }
     onDispose() {
@@ -446,7 +448,7 @@ class Server extends colyseus.Room {
                 let balance = user > -1 ? this.clients[user].balance : 0;
                 this.updateUserBalance(id, balance, this.state.players[sit].bet);
                 if (user > -1)
-                    this.clients[user].balance += this.state.players[sit].bet;
+                    this.clients[user].balance = this.add(this.clients[user].balance,this.state.players[sit].bet);
             }
         }
     }
@@ -470,9 +472,8 @@ class Server extends colyseus.Room {
         }
     }
     result(xid) {
-
         let sit, wins = {}, id, user, balance, state, winner;
-        let playerCards = [], boardCards = this.state.deck;
+        let playerCards = [], boardCards = this.deck.slice(0, 5);
         for (sit in this.state.players) {
             if (this.state.players[sit].state != 'fold') {
                 playerCards.push({
@@ -489,7 +490,7 @@ class Server extends colyseus.Room {
         let commission = (Number(this.setting.commission) * this.state.bank) / 100;
         let amount = this.add(this.state.bank, -commission);
         amount /= winner.length;
-        amount = amount.toFixed(2)
+        amount = parseFloat(amount.toFixed(2));
         for (let win of winner) {
             let sit = win.playerId;
             user = this.userBySit(sit);
@@ -497,7 +498,7 @@ class Server extends colyseus.Room {
             balance = user > -1 ? this.clients[user].balance : 0;
             this.updateUserBalance(id, balance, amount);
             if (user > -1) {
-                this.clients[user].balance += amount;
+                this.clients[user].balance = this.add(this.clients[user].balance,amount);
             }       
             wins[sit] = [
                 win.hand.cards.map(i => i.replace('S', 's').replace('H', 'h').replace('C', 'c').replace('D', 'd')),
