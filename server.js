@@ -37,6 +37,7 @@ class Server extends colyseus.Room {
         this.level = 1;
         this.deck = [];
         this.userDeck = {};
+        this.regnant = null;
         autoBind(this);
     }
     async onInit(options) {
@@ -175,6 +176,8 @@ class Server extends colyseus.Room {
     }
     onLeave(client, consented) {
         this.state.online = this.state.online - 1;
+        this.state.players[client.sit].leave = true;
+        this.state.players[client.sit].state = 'fold';
         this.checkState(client)
     }
     onDispose() {
@@ -193,7 +196,9 @@ class Server extends colyseus.Room {
             client.sit = sit;
             this.state.players[sit] = { id: client.id, name: client.name, avatar: client.avatar, balance: client.balance };
             this.setClientReady();
-            if (!this.state.started)
+            if (this.state.started)
+                this.state.players[sit].state = 'fold';
+            else
                 this.canStart();
             this.send(client, { mySit: sit });
             return true;
@@ -202,23 +207,14 @@ class Server extends colyseus.Room {
     }
     checkState(client) {
         let sit = client.sit || 0;
-        if (sit > 0 && this.state.players[sit].state !='fold') {
-            if (!this.state.started) {
+        if (sit > 0){
+            if (!this.state.started || this.state.players[sit].state == 'fold') {
                 this.standBySit(sit);
                 return;
             }
             else {
                 this.send(client, { cantStandErr: true });
             }
-            if ('ready' in this.state.players[sit]) {
-                if (this.state.players[sit].ready == false) {
-                    this.standBySit(sit)
-                }
-                else {
-                    this.state.players[client.sit].leave = true;
-                }
-            }
-
         }
     }
     stand(client) {
@@ -240,7 +236,7 @@ class Server extends colyseus.Room {
             if (this.ready() > 1) {
                 this.start();
             }
-        }, 5000);
+        }, 2000);
     }
     start() {
         this.state.started = true;
@@ -248,8 +244,8 @@ class Server extends colyseus.Room {
     }
     newRound() {
         this.reset();
+        this.regnant = this.regnant == null ? this.randomRegnant() : this.isNext(this.regnant);
         this.broadcast({ game: 'start' });
-        this.regnant = this.randomRegnant();
         this.newLevel();
         this.dispatch();
         this.setTimer(this.takeAction, 3000);
@@ -292,7 +288,6 @@ class Server extends colyseus.Room {
         this.actionIs(type, value)
     }
     actionIs(type, value, action = true) {
-        console.log(type, value)
         this.clearTimer();
         let sit = this.state.turn;
         let id = this.state.players[sit].id;
@@ -380,6 +375,17 @@ class Server extends colyseus.Room {
                 this.nextAction();
         }
     }
+    isNext(turn) {
+        let end = 9;
+        for (let i = 1; i < end; i++) {
+            let next = (turn + i) % end;
+            next = next === 0 ? end : next;
+            if (next in this.state.players) {
+                    return next;
+            }
+        }
+        return false;
+    }
     checkLevel() {
         if (this.level == 1) {
             this.addtoDeck();
@@ -464,18 +470,6 @@ class Server extends colyseus.Room {
         }
     }
     result(xid) {
-        console.log(this.state.deck);
-        var params = {
-            boardCards: ['Ad', 'As', 'Jc', 'Th', '2d'],
-            playerCards:
-                [
-                    { playerId: "1", cards: ['3c', 'Kd'] },
-                    { playerId: "2", cards: ['Qs', 'Qd'] }
-                ]
-        }
-
-       
-
 
         let sit, wins = {}, id, user, balance, state, winner;
         let playerCards = [], boardCards = this.state.deck;
@@ -484,17 +478,19 @@ class Server extends colyseus.Room {
                 playerCards.push({
                     playerId: sit, cards: this.userDeck[sit]
                 })
-                console.log(this.userDeck[sit]);
             }
         }
-
-        winner = pokerCalc.getHoldemWinner({ boardCards, playerCards}, { compactCards: true });
-        
+        if (this.meta.type == 'holdem') {
+            winner = pokerCalc.getHoldemWinner({ boardCards, playerCards }, { compactCards: true });
+        }
+        else {
+            winner = pokerCalc.getOmahaWinner({ boardCards, playerCards }, { compactCards: true });
+        }
         let commission = (Number(this.setting.commission) * this.state.bank) / 100;
         let amount = this.add(this.state.bank, -commission);
         amount /= winner.length;
+        amount = amount.toFixed(2)
         for (let win of winner) {
-            console.log(win)
             let sit = win.playerId;
             user = this.userBySit(sit);
             id = this.state.players[sit].id;
@@ -503,7 +499,11 @@ class Server extends colyseus.Room {
             if (user > -1) {
                 this.clients[user].balance += amount;
             }       
-            wins[sit] = [win.hand.cards, this.userDeck[sit], win.hand.handInfo];      
+            wins[sit] = [
+                win.hand.cards.map(i => i.replace('S', 's').replace('H', 'h').replace('C', 'c').replace('D', 'd')),
+                this.userDeck[sit],
+                win.hand.handInfo
+            ];      
         }
 
         for (sit in this.state.players) {
@@ -527,7 +527,6 @@ class Server extends colyseus.Room {
             }
             Connection.query('INSERT INTO `poker_result` SET ?', result);
         }
-        console.log(wins);
         this.broadcast({ gameResult:  wins});
 
 
