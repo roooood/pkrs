@@ -327,12 +327,12 @@ class Server extends colyseus.Room {
         else if (type == 'raise') {
             let userBet = this.state.players[sit].bet || 0;
             value = Number(value);
-            let amount = value - userBet;
+            let amount = value + userBet;
             if (balance >= amount) {
-                this.state.bet = value;
-                this.updateUserBalance(id, balance, - amount);
-                this.state.players[sit].bet = value;
-                this.state.bank = this.add(this.state.bank, amount);
+                this.state.bet = amount;
+                this.updateUserBalance(id, balance, - value);
+                this.state.players[sit].bet = amount;
+                this.state.bank = this.add(this.state.bank, value);
                 if(action)
                 this.nextTurn();
             }
@@ -373,7 +373,7 @@ class Server extends colyseus.Room {
             }
         }
         if (newTurn === false) {
-            this.checkLevel()
+           this.checkLevel()
         }
         else {
             this.state.turn = newTurn;
@@ -451,8 +451,6 @@ class Server extends colyseus.Room {
                 let user = this.userById(id);
                 let balance = user > -1 ? this.clients[user].balance : 0;
                 this.updateUserBalance(id, balance, this.state.players[sit].bet);
-                if (user > -1)
-                    this.clients[user].balance = this.add(this.clients[user].balance,this.state.players[sit].bet);
             }
         }
     }
@@ -500,10 +498,7 @@ class Server extends colyseus.Room {
             user = this.userBySit(sit);
             id = this.state.players[sit].id;
             balance = user > -1 ? this.clients[user].balance : 0;
-            this.updateUserBalance(id, balance, amount);
-            if (user > -1) {
-                this.clients[user].balance = this.add(this.clients[user].balance,amount);
-            }       
+            this.updateUserBalance(id, balance, amount);    
             wins[sit] = [
                 win.hand.cards.map(i => i.replace('S', 's').replace('H', 'h').replace('C', 'c').replace('D', 'd')),
                 this.userDeck[sit],
@@ -535,7 +530,7 @@ class Server extends colyseus.Room {
         this.broadcast({ gameResult:  wins});
         this.checkCards();
 
-        this.setTimer(this.over, Object.keys(wins)*5000);
+        this.setTimer(this.over, Object.keys(wins)*5000-3000);
     }
     sendToPlayer(option) {
         for (let client in this.clients) {
@@ -570,7 +565,7 @@ class Server extends colyseus.Room {
     checkLeave() {
         let check = false;
         for (let i in this.state.players) {
-            if ('leave' in this.state.players[i]) {
+            if ('leave' in this.state.players[i] || this.state.players[i].balance < this.meta.min) {
                 this.standBySit(i);
                 check = true;
             }
@@ -772,8 +767,15 @@ class Server extends colyseus.Room {
     }
     updateUserBalance(id, balance, amount) {
         let user = this.userById(id);
-        if (user > -1)
-            this.send(this.clients[user], { balance: [balance, amount] })
+        for (let sit in this.state.players) {
+            if (this.state.players[sit].id == id) {
+                this.state.players[sit].balance = this.add(this.state.players[sit].balance , amount)
+            }
+        }
+        if (user > -1) {
+            this.clients[user].balance = this.add(this.clients[user].balance, amount);
+            this.send(this.clients[user], { balance: [balance, amount] });
+        }
         return;
         var user_token = "";
         Connection.query('SELECT * FROM `users` where `users`.`userId`=? LIMIT 1', [id])
