@@ -528,7 +528,7 @@ class Server extends colyseus.Room {
             Connection.query('INSERT INTO `poker_result` SET ?', result);
         }
         this.broadcast({ gameResult:  wins});
-
+        this.checkCards();
 
         this.setTimer(this.over, Object.keys(wins)*3000+2000);
     }
@@ -678,7 +678,7 @@ class Server extends colyseus.Room {
     }
     checkCards() {
         let len = 15;
-        Connection.query('SELECT `poker_cards`.*,`poker_points`.`bank` FROM `poker_cards`  RIGHT JOIN `poker_points`  ON `poker_points`.`cardId`=`poker_cards`.`id` WHERE `poker_cards`.`tid` = ? LIMIT ?', [this.meta.id, len])
+        Connection.query('SELECT `poker_cards`.*,`poker_points`.`bank` FROM `poker_cards` LEFT JOIN `poker_points`  ON `poker_points`.`cardId`=`poker_cards`.`id` WHERE `poker_cards`.`tid` = ? LIMIT ?', [this.meta.id, len])
             .then(results => {
                 let res, data = [];
                 for (res of results) {
