@@ -530,7 +530,7 @@ class Server extends colyseus.Room {
         this.broadcast({ gameResult:  wins});
         this.checkCards();
 
-        this.setTimer(this.over, Object.keys(wins)*3000+2000);
+        this.setTimer(this.over, Object.keys(wins)*3000);
     }
     sendToPlayer(option) {
         for (let client in this.clients) {
@@ -560,7 +560,7 @@ class Server extends colyseus.Room {
         this.state.started = false;
         this.clearTimer();
         this.reset();
-        this.setTimer(this.canStart, 5000);
+        this.setTimer(this.canStart, 3000);
     }
     checkLeave() {
         let check = false;
