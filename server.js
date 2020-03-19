@@ -13,7 +13,7 @@ class State {
         this.cardId = 0;
         this.bet = 0;
         this.bank = 0;
-        this.deck = [];
+        this.deck = ['2c','Ah','5s'];
         this.message = [];
         this.history = [];
     }
@@ -530,7 +530,7 @@ class Server extends colyseus.Room {
         this.broadcast({ gameResult:  wins});
         this.checkCards();
 
-        this.setTimer(this.over, Object.keys(wins)*5000-3000);
+        this.setTimer(this.over, Object.keys(wins)*5000-4000);
     }
     sendToPlayer(option) {
         for (let client in this.clients) {
