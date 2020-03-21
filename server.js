@@ -129,13 +129,13 @@ class Server extends colyseus.Room {
                 client.sit = sit;
                 this.clock.setTimeout(() => {
                     this.send(client, { mySit: client.sit });
-                }, 1000);
+                }, 800);
                 this.clock.setTimeout(() => {
                     this.send(client, { myCards: this.userDeck[client.sit] });
                     if (this.state.turn == client.sit) {
                         this.send(client,{ takeAction: this.state.turn })
                     }
-                }, 1200);
+                }, 1000);
                 delete this.state.players[sit].leave;
             }
         }
@@ -181,6 +181,7 @@ class Server extends colyseus.Room {
         this.state.online = this.state.online - 1;
         if (this.state.started && client.sit > 0) {
             this.state.players[client.sit].leave = true;
+            if (consented)
             this.state.players[client.sit].state = 'fold';
         }
         this.checkState(client)
@@ -548,11 +549,12 @@ class Server extends colyseus.Room {
         }
     }
     reset() {
-        this.state.de = {};
+        this.state.deck = {};
         this.userDeck = {};
         this.level = 0;
         this.state.turn = null;
         this.state.bank = 0;
+        this.state.bet = this.meta.min;
         this.state.deck = [];
         this.broadcast({ reset: true });
         this.checkLeave();
@@ -568,7 +570,7 @@ class Server extends colyseus.Room {
         this.state.started = false;
         this.clearTimer();
         this.reset();
-        this.setTimer(this.canStart, 2000);
+        this.setTimer(this.canStart, 1000);
     }
     checkLeave() {
         let check = false;
