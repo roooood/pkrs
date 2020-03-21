@@ -157,8 +157,9 @@ class Server extends colyseus.Room {
                 this.stand(client)
                 break;
             case 'action':
-                if (this.state.turn == client.sit)
+                if (this.state.turn == client.sit) {
                     this.actionResult(client, value)
+                }
                 break;
             case 'imReady':
                 this.checkStart(client, true)
@@ -279,18 +280,18 @@ class Server extends colyseus.Room {
         this.nextAction();
     }
     nextAction() {
-        let sit = this.state.turn;
-        let id = this.state.players[sit].id;
-        let user = this.userById(id);
-        let balance = user > -1 ? this.clients[user].balance : 0;
-        let userBet = this.state.players[sit].bet || 0;
-        if (balance + userBet < this.state.bet) {
-            this.noAction();
-        }
-        else {
+        // let sit = this.state.turn;
+        // let id = this.state.players[sit].id;
+        // let user = this.userById(id);
+        // let balance = user > -1 ? this.clients[user].balance : 0;
+        // let userBet = this.state.players[sit].bet || 0;
+        // if (balance + userBet < this.state.bet) {
+        //     this.noAction();
+        // }
+        // else {
             this.setTimer(this.noAction, this.setting.timer);
             this.broadcast({ takeAction: this.state.turn })
-        }
+        //}
     }
     noAction() {
         this.actionIs('fold')
@@ -299,10 +300,11 @@ class Server extends colyseus.Room {
         this.actionIs(type, value)
     }
     actionIs(type, value, action = true) {
-        this.clearTimer();
         let sit = this.state.turn;
+        this.clearTimer();
+
         if (!(sit in this.state.players)) {
-            this.checkResult(); 
+            this.checkResult(action); 
             return;
         }
         let id = this.state.players[sit].id;
@@ -310,10 +312,16 @@ class Server extends colyseus.Room {
         let balance = user > -1 ? this.clients[user].balance : 0;
         this.state.players[sit].state = type;
         if (type == 'fold') {
-            this.checkResult();
+            this.checkResult(action);
         }
-        else if(type == 'check') {
-            if (action)
+        else if (type == 'check') {
+            let userBet = this.state.players[sit].bet || 0;
+            if (this.state.bet != userBet) {
+                type = 'fold';
+                this.state.players[sit].state = 'fold';
+                this.checkResult(action);
+            }
+            else if (action)
                 this.nextTurn();
         }
         else if (type == 'call') {
@@ -321,7 +329,8 @@ class Server extends colyseus.Room {
             let amount = this.state.bet - userBet;
             if (balance < amount) {
                 type = 'fold';
-                this.checkResult();
+                this.state.players[sit].state = 'fold';
+                this.checkResult(action);
             }
             else {
                 if (amount > 0) {
@@ -347,7 +356,8 @@ class Server extends colyseus.Room {
             }
             else {
                 type = 'fold';
-                this.checkResult();
+                this.state.players[sit].state = 'fold';
+                this.checkResult(action);
             }
 
         }
@@ -368,7 +378,7 @@ class Server extends colyseus.Room {
             let next = (turn + i) % end;
             next = next === 0 ? end : next;
             if (next in this.state.players) {
-                if (!['fold', 'allin'].includes(this.state.players[next].state)) {
+                if (!(['fold', 'allin'].includes(this.state.players[next].state))) {
                     let userBet = this.state.players[next].bet || 0;
                     if (userBet < this.state.bet) {
                         newTurn = next;
@@ -422,16 +432,19 @@ class Server extends colyseus.Room {
         }
     }
     newLevel() {
-        this.broadcast({ newLevel: this.level })
-        this.state.turn = this.regnant;
-        this.level++;
+        this.broadcast({ newLevel: this.level });
         for (let i in this.state.players) {
-            if (!['fold', 'allin'].includes(this.state.players[i].state)) {
+            if (!(['fold', 'allin'].includes(this.state.players[i].state))) {
                 this.state.players[i].state = 'new';
             }
         }
+        this.state.turn = this.regnant;
+        if (this.state.players[this.regnant].state == 'fold') {
+            this.nextTurn(false);
+        }
+        this.level++;
     }
-    checkResult() {
+    checkResult(action) {
         let count = 1, beting = 1;
         let player = this.ready();
         for (let i in this.state.players) {
@@ -450,7 +463,10 @@ class Server extends colyseus.Room {
                 this.preResult();
             }
         }
-
+        else {
+            if (action)
+                this.nextTurn();
+        }
 
     }
     returnBalance() {
@@ -474,7 +490,7 @@ class Server extends colyseus.Room {
                     Connection.query('SELECT LAST_INSERT_ID() AS `last_id` ')
                         .then(result => {
                             let id = result[0]['last_id'];
-                            this.result(id);
+                            this.clock.setTimeout(() => this.result(id), 1500);
                         });
                 });
 
@@ -539,7 +555,7 @@ class Server extends colyseus.Room {
         this.broadcast({ gameResult:  wins});
         this.checkCards();
 
-        this.setTimer(this.over, (Object.keys(wins).length*5000));
+        this.setTimer(this.over, (Object.keys(wins).length*4500)-1000);
     }
     sendToPlayer(option) {
         for (let client in this.clients) {
@@ -558,11 +574,15 @@ class Server extends colyseus.Room {
         this.state.deck = [];
         this.broadcast({ reset: true });
         this.checkLeave();
-        let i;
+        let i,sit;
         for (i in this.state.players) {
             delete this.state.players[i].state;
             delete this.state.players[i].bet;
             delete this.state.players[i].type;
+            sit = this.userBySit(i);
+            if (sit > -1) {
+                this.send(this.clients[sit], { myCards: [] });
+            }
         }
     }
     over() {
@@ -690,7 +710,7 @@ class Server extends colyseus.Room {
     }
     checkCards() {
         let len = 15;
-        Connection.query('SELECT `poker_cards`.*,`poker_points`.`bank` FROM `poker_cards` LEFT JOIN `poker_points`  ON `poker_points`.`cardId`=`poker_cards`.`id` WHERE `poker_cards`.`tid` = ? LIMIT ?', [this.meta.id, len])
+        Connection.query('SELECT `poker_cards`.*,`poker_points`.`bank` FROM `poker_cards` LEFT JOIN `poker_points`  ON `poker_points`.`cardId`=`poker_cards`.`id` WHERE `poker_cards`.`tid` = ? AND `poker_points`.`bank`>0 ORDER BY `poker_cards`.`id` DESC LIMIT ?', [this.meta.id, len])
             .then(results => {
                 let res, data = [];
                 for (res of results) {
