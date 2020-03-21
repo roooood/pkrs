@@ -307,15 +307,19 @@ class Server extends colyseus.Room {
             this.checkResult(action); 
             return;
         }
+        let userBet = this.state.players[sit].bet || 0;
         let id = this.state.players[sit].id;
         let user = this.userById(id);
         let balance = user > -1 ? this.clients[user].balance : 0;
+
+        if ((balance + userBet < this.state.bet) && type != 'fold') {
+            type = 'allin';
+        }
         this.state.players[sit].state = type;
         if (type == 'fold') {
             this.checkResult(action);
         }
         else if (type == 'check') {
-            let userBet = this.state.players[sit].bet || 0;
             if (this.state.bet != userBet) {
                 type = 'fold';
                 this.state.players[sit].state = 'fold';
@@ -325,7 +329,6 @@ class Server extends colyseus.Room {
                 this.nextTurn();
         }
         else if (type == 'call') {
-            let userBet = this.state.players[sit].bet || 0;
             let amount = this.state.bet - userBet;
             if (balance < amount) {
                 type = 'fold';
@@ -343,7 +346,6 @@ class Server extends colyseus.Room {
             }
         }
         else if (type == 'raise') {
-            let userBet = this.state.players[sit].bet || 0;
             value = Number(value);
             let amount = value + userBet;
             if (balance > value) {
@@ -362,10 +364,18 @@ class Server extends colyseus.Room {
 
         }
         else if (type == 'allin') {
-            this.state.bet += balance;
+            let amount = this.state.bet - userBet;
+            let value = balance - amount;
+            if (value > 0) {
+                this.state.players[sit].bet += balance; 
+                this.state.bet += value;
+                this.state.bank = this.add(this.state.bank, value);
+            }
+            else {
+                this.state.players[sit].bet = userBet + balance; 
+                this.state.bank = this.add(this.state.bank, balance);
+            }
             this.updateUserBalance(id, balance, - balance);
-            this.state.players[sit].bet = this.state.bet;
-            this.state.bank = this.add(this.state.bank, balance);
             if (action)
             this.nextTurn();
         }
@@ -378,7 +388,9 @@ class Server extends colyseus.Room {
             let next = (turn + i) % end;
             next = next === 0 ? end : next;
             if (next in this.state.players) {
+                console.log(this.state.players[next]);
                 if (!(['fold', 'allin'].includes(this.state.players[next].state))) {
+                    console.log(this.state.players[next]);
                     let userBet = this.state.players[next].bet || 0;
                     if (userBet < this.state.bet) {
                         newTurn = next;
@@ -391,13 +403,15 @@ class Server extends colyseus.Room {
                 }
             }
         }
+
         if (newTurn === false) {
-           this.checkLevel()
+            this.checkLevel()
         }
         else {
+            console.log(newTurn);
             this.state.turn = newTurn;
             if (action)
-                this.nextAction();
+            this.nextAction();
         }
     }
     isNext(turn) {
@@ -433,16 +447,24 @@ class Server extends colyseus.Room {
     }
     newLevel() {
         this.broadcast({ newLevel: this.level });
+        let count = 0;
         for (let i in this.state.players) {
             if (!(['fold', 'allin'].includes(this.state.players[i].state))) {
                 this.state.players[i].state = 'new';
+                count++;
             }
         }
-        this.state.turn = this.regnant;
-        if (this.state.players[this.regnant].state == 'fold') {
-            this.nextTurn(false);
+        if (count == 1) {
+            this.addtoDeck(true);
+            this.preResult();
         }
-        this.level++;
+        else {        
+            this.state.turn = this.regnant;
+            if (['fold', 'allin'].includes(this.state.players[this.regnant].state)) {
+                this.nextTurn(false);
+            }
+            this.level++;
+        }
     }
     checkResult(action) {
         let count = 1, beting = 1;
@@ -678,10 +700,15 @@ class Server extends colyseus.Room {
             this.userDeck[i] = this.deck.slice(start, end);
         }
     }
-    addtoDeck() {
-        let len = this.state.deck.length;
-        let end = len == 0 ? 3 : (len == 3 ? 4 : 5);
-        this.state.deck = this.deck.slice(0, end);
+    addtoDeck(all = false) {
+        if (all) {
+            this.state.deck = this.deck.slice(0, 5);
+        }
+        else {       
+            let len = this.state.deck.length;
+            let end = len == 0 ? 3 : (len == 3 ? 4 : 5);
+            this.state.deck = this.deck.slice(0, end);
+        }
 
     }
     chat(client, msg) {
