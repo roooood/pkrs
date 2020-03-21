@@ -13,7 +13,7 @@ class State {
         this.cardId = 0;
         this.bet = 0;
         this.bank = 0;
-        this.deck = ['2c','Ah','5s'];
+        this.deck = [];
         this.message = [];
         this.history = [];
     }
@@ -120,11 +120,9 @@ class Server extends colyseus.Room {
         if (this.first) {
             this.first = false;
             this.timer = this.clock.setTimeout(() => {
-                // this.sit(client, 4)
                 this.checkCards();
                 this.checkMessage();
             }, 3000);
-
         }
         for (let sit in this.state.players) {
             if (this.state.players[sit].id == client.id) {
@@ -132,8 +130,13 @@ class Server extends colyseus.Room {
                 this.clock.setTimeout(() => {
                     this.send(client, { mySit: client.sit });
                 }, 1000);
+                this.clock.setTimeout(() => {
+                    this.send(client, { myCards: this.userDeck[client.sit] });
+                    if (this.state.turn == client.sit) {
+                        this.send(client,{ takeAction: this.state.turn })
+                    }
+                }, 1200);
                 delete this.state.players[sit].leave;
-
             }
         }
         this.state.online = this.state.online + 1;
@@ -213,13 +216,14 @@ class Server extends colyseus.Room {
     }
     checkState(client) {
         let sit = client.sit || 0;
-        if (sit > 0){
-            if (!this.state.started || this.state.players[sit].state == 'fold') {
-                this.standBySit(sit);
-                return;
+        if (sit > 0) {
+            if (this.state.started) {
+                this.send(client, { waitStand: true });
+                this.state.players[sit].leave = true
             }
             else {
-                this.send(client, { cantStandErr: true });
+                this.standBySit(sit);
+                return;
             }
         }
     }
@@ -296,6 +300,10 @@ class Server extends colyseus.Room {
     actionIs(type, value, action = true) {
         this.clearTimer();
         let sit = this.state.turn;
+        if (!(sit in this.state.players)) {
+            this.checkResult(); 
+            return;
+        }
         let id = this.state.players[sit].id;
         let user = this.userById(id);
         let balance = user > -1 ? this.clients[user].balance : 0;
@@ -328,7 +336,7 @@ class Server extends colyseus.Room {
             let userBet = this.state.players[sit].bet || 0;
             value = Number(value);
             let amount = value + userBet;
-            if (balance >= amount) {
+            if (balance > value) {
                 this.state.bet = amount;
                 this.updateUserBalance(id, balance, - value);
                 this.state.players[sit].bet = amount;
@@ -522,7 +530,7 @@ class Server extends colyseus.Room {
             let result = {
                 pid: xid,
                 uid: this.state.players[sit].id,
-                cash: state ? amount : this.state.players[sit].bet,
+                cash: state ? (amount||0) : (this.state.players[sit].bet||0),
                 type: state ? 'win' : 'lose'
             }
             Connection.query('INSERT INTO `poker_result` SET ?', result);
@@ -530,7 +538,7 @@ class Server extends colyseus.Room {
         this.broadcast({ gameResult:  wins});
         this.checkCards();
 
-        this.setTimer(this.over, Object.keys(wins)*5000-4000);
+        this.setTimer(this.over, (Object.keys(wins).length*5000));
     }
     sendToPlayer(option) {
         for (let client in this.clients) {
@@ -556,7 +564,7 @@ class Server extends colyseus.Room {
         }
     }
     over() {
-        this.returnBalance();
+        // this.returnBalance();
         this.state.started = false;
         this.clearTimer();
         this.reset();
@@ -566,6 +574,8 @@ class Server extends colyseus.Room {
         let check = false;
         for (let i in this.state.players) {
             if ('leave' in this.state.players[i] || this.state.players[i].balance < this.meta.min) {
+                let sit = this.userBySit(i);
+                this.send(this.clients[sit], { waitStand: false });
                 this.standBySit(i);
                 check = true;
             }
