@@ -388,9 +388,7 @@ class Server extends colyseus.Room {
             let next = (turn + i) % end;
             next = next === 0 ? end : next;
             if (next in this.state.players) {
-                console.log(this.state.players[next]);
                 if (!(['fold', 'allin'].includes(this.state.players[next].state))) {
-                    console.log(this.state.players[next]);
                     let userBet = this.state.players[next].bet || 0;
                     if (userBet < this.state.bet) {
                         newTurn = next;
@@ -408,7 +406,6 @@ class Server extends colyseus.Room {
             this.checkLevel()
         }
         else {
-            console.log(newTurn);
             this.state.turn = newTurn;
             if (action)
             this.nextAction();
