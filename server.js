@@ -24,6 +24,8 @@ class metaData {
         this.id = options.id;
         this.min = Number(options.min);
         this.max = Number(options.max);
+        this.sb = Number(options.sb);
+        this.bb = Number(options.bb);
         this.player = options.player;
         this.type = options.type;
         this.ready = 0;
@@ -87,15 +89,17 @@ class Server extends colyseus.Room {
             await Connection.query('SELECT * FROM `poker_table` WHERE `id` =?  LIMIT 1', [options.id])
                 .then(results => {
                     this.meta = new metaData({
-                        id: options.id || null,
-                        title: results[0].name || 'no name',
-                        min: results[0].min || this.setting.minbet,
-                        max: results[0].max || this.setting.maxbet,
-                        player: results[0].player || 0,
-                        type: results[0].type || 'holdem',
+                        id: options.id,
+                        title: results[0].name ,
+                        min: results[0].min,
+                        max: results[0].max,
+                        sb: results[0].sb,
+                        bb: results[0].bb,
+                        player: results[0].player ,
+                        type: results[0].type,
                     });
                     this.setMetadata(this.meta);
-                    this.state.bet = this.meta.min;
+                    this.state.bet = this.meta.sb;
                 });
         }
         if ('guest' in auth) {
@@ -196,7 +200,7 @@ class Server extends colyseus.Room {
             return;
         }
         else if (client.balance < this.meta.min) {
-            this.send(client, { error: 'balance' });
+            this.send(client, { error: 'Balance' });
             return;
         }
         if (this.state.players[sit] == null) {
@@ -274,7 +278,7 @@ class Server extends colyseus.Room {
 
         if (this.meta.player > 2) {
             this.nextTurn(false);
-            this.actionIs('raise', this.meta.max,false);
+            this.actionIs('raise', this.meta.bb,false);
         }
         this.nextTurn(false);
         this.nextAction();
@@ -308,6 +312,7 @@ class Server extends colyseus.Room {
             return;
         }
         let userBet = this.state.players[sit].bet || 0;
+        let profit = this.state.players[sit].profit || 0;
         let id = this.state.players[sit].id;
         let user = this.userById(id);
         let balance = user > -1 ? this.clients[user].balance : 0;
@@ -346,9 +351,14 @@ class Server extends colyseus.Room {
             }
         }
         else if (type == 'raise') {
+            let max = balance >= this.meta.max ? this.meta.max + profit : balance;
+            if (max > balance) {
+                max = balance;
+            }
+
             value = Number(value);
             let amount = value + userBet;
-            if (balance > value) {
+            if (max >= value) {
                 this.state.bet = amount;
                 this.updateUserBalance(id, balance, - value);
                 this.state.players[sit].bet = amount;
@@ -364,18 +374,23 @@ class Server extends colyseus.Room {
 
         }
         else if (type == 'allin') {
+            let max = balance >= this.meta.max ? this.meta.max + profit  : balance;
+            if (max < balance) {
+                max = balance;
+            }
+
             let amount = this.state.bet - userBet;
-            let value = balance - amount;
+            let value = max - amount;
             if (value > 0) {
-                this.state.players[sit].bet += balance; 
+                this.state.players[sit].bet += max; 
                 this.state.bet += value;
                 this.state.bank = this.add(this.state.bank, value);
             }
             else {
-                this.state.players[sit].bet = userBet + balance; 
-                this.state.bank = this.add(this.state.bank, balance);
+                this.state.players[sit].bet = userBet + max; 
+                this.state.bank = this.add(this.state.bank, max);
             }
-            this.updateUserBalance(id, balance, - balance);
+            this.updateUserBalance(id, balance, -max);
             if (action)
             this.nextTurn();
         }
@@ -589,7 +604,7 @@ class Server extends colyseus.Room {
         this.level = 0;
         this.state.turn = null;
         this.state.bank = 0;
-        this.state.bet = this.meta.min;
+        this.state.bet = this.meta.sb;
         this.state.deck = [];
         this.broadcast({ reset: true });
         this.checkLeave();
@@ -825,6 +840,9 @@ class Server extends colyseus.Room {
         let user = this.userById(id);
         for (let sit in this.state.players) {
             if (this.state.players[sit].id == id) {
+                if (amount > 0) {
+                    this.state.players[sit].profit = this.add((this.state.players[sit].profit||0), amount)
+                }
                 this.state.players[sit].balance = this.add(this.state.players[sit].balance , amount)
             }
         }
