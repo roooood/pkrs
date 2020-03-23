@@ -629,7 +629,7 @@ class Server extends colyseus.Room {
     checkLeave() {
         let check = false;
         for (let i in this.state.players) {
-            if ('leave' in this.state.players[i] || this.state.players[i].balance < this.meta.min) {
+            if ('leave' in this.state.players[i] || this.state.players[i].balance < this.meta.sb) {
                 let sit = this.userBySit(i);
                 this.send(this.clients[sit], { waitStand: false });
                 this.standBySit(i);
