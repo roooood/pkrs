@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Mar 19, 2020 at 06:55 PM
+-- Generation Time: Mar 23, 2020 at 11:43 AM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 7.3.4
 
@@ -96,11 +96,7 @@ CREATE TABLE `poker_result` (
 
 CREATE TABLE `poker_setting` (
   `id` int(11) NOT NULL,
-  `minbet` double NOT NULL,
-  `step` float NOT NULL,
-  `maxbet` double NOT NULL,
   `timer` int(11) NOT NULL,
-  `tableLimit` int(11) NOT NULL,
   `commission` int(11) NOT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=latin1;
 
@@ -108,8 +104,8 @@ CREATE TABLE `poker_setting` (
 -- Dumping data for table `poker_setting`
 --
 
-INSERT INTO `poker_setting` (`id`, `minbet`, `step`, `maxbet`, `timer`, `tableLimit`, `commission`) VALUES
-(1, 1000, 1000, 100000, 500, 10, 2);
+INSERT INTO `poker_setting` (`id`, `timer`, `commission`) VALUES
+(1, 500, 2);
 
 -- --------------------------------------------------------
 
@@ -124,6 +120,8 @@ CREATE TABLE `poker_table` (
   `player` int(11) NOT NULL DEFAULT '7',
   `min` float NOT NULL,
   `max` float NOT NULL,
+  `sb` float NOT NULL,
+  `bb` float NOT NULL,
   `order` int(11) NOT NULL
 ) ENGINE=MyISAM DEFAULT CHARSET=utf8 COLLATE=utf8_persian_ci;
 
@@ -131,11 +129,11 @@ CREATE TABLE `poker_table` (
 -- Dumping data for table `poker_table`
 --
 
-INSERT INTO `poker_table` (`id`, `name`, `type`, `player`, `min`, `max`, `order`) VALUES
-(1, 'poker', 'holdem', 5, 200, 400, 1),
-(2, 'poker', 'holdem', 2, 200, 400, 1),
-(3, 'poker', 'holdem', 3, 200, 400, 1),
-(4, 'poker', 'holdem', 4, 200, 400, 1);
+INSERT INTO `poker_table` (`id`, `name`, `type`, `player`, `min`, `max`, `sb`, `bb`, `order`) VALUES
+(1, 'poker', 'holdem', 5, 500, 4000, 10, 50, 1),
+(2, 'poker', 'holdem', 2, 200, 400, 10, 50, 1),
+(3, 'poker', 'holdem', 3, 200, 400, 10, 50, 1),
+(4, 'poker', 'holdem', 4, 200, 400, 10, 50, 1);
 
 -- --------------------------------------------------------
 
